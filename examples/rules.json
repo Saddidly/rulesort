@@ -1,0 +1,19 @@
+{
+  "root": "./inbox",
+  "recursive": true,
+  "conflict_policy": "suffix",
+  "rules": [
+    {
+      "name": "screenshots",
+      "extensions": [".png", ".jpg"],
+      "name_regex": "^(Screenshot|Screen Shot)",
+      "destination": "Pictures/Screenshots/{year}/{month}"
+    },
+    {
+      "name": "documents",
+      "extensions": [".pdf", ".docx", ".xlsx"],
+      "size_min": 1,
+      "destination": "Documents/{extension}"
+    }
+  ]
+}
