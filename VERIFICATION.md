@@ -1,20 +1,42 @@
 # Verification
 
-Local evidence recorded on 2026-10-03.
+Local evidence recorded on 2026-10-03 for the 1.1.0 working tree.
 
-## Passed
+## Passed locally
 
-10 unittest cases passed using real temporary files, including successful apply/undo, stale content, collisions, symlink scanning, no-replace behavior, protected plan output, and injected partial apply/undo failures.
+The 32 unittest cases passed using Windows Python 3.12.14 from the bundled
+workspace runtime. The suite uses temporary real files and subprocesses, and
+covers plan/apply/undo, failure injection around link/unlink boundaries,
+interrupted and repeated recovery, two- and three-file cycles, changed content, unrelated
+destination collisions, malformed or truncated journals, hard-linked inputs,
+ancestor conflicts, and competing root operations.
 
-## Environment and limits
+Commands run from the repository root:
 
-Windows Python 3.12.14 on a hard-link-capable filesystem. Automatic crash recovery and cross-volume moves are not implemented.
+```powershell
+$env:PYTHONPATH = "src"
+& "C:\Users\jinxa\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe" -m compileall -q src/rulesort tests
+& "C:\Users\jinxa\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe" -m unittest discover -s tests -v
+```
 
-## Hosted evidence
+The suite completed with `Ran 32 tests` and `OK`; `compileall` also completed
+without diagnostics.
 
-[GitHub Actions run](https://github.com/Saddidly/rulesort/actions/runs/37111981732) passed on 2026-10-03 for code revision `0f621715fbb3c157dafcb00fc1eb58571664a6db`.
+The parent review also reported a separate installed-wheel CLI acceptance pass:
+two-file plan/apply/inspect/undo preserved the expected bytes, and an occupied
+target was refused without changing any file.
 
-Ubuntu and Windows, Python 3.10/3.12; filesystem tests.
+## Limits
 
-These checks cover the named environments and cases, not every possible input or platform. Re-run README commands after changing dependencies or moving to another platform. Screenshots and acceptance data are synthetic.
+This local run covers the current Windows environment and filesystem only. It
+does not establish behavior on every POSIX or network filesystem, power-loss
+durability, or hostile concurrent filesystem mutation. No runtime dependencies
+were installed for this change. Release build/install and hosted workflow
+results are left to the parent review.
 
+## Hosted workflow
+
+The [GitHub Actions CI workflow](https://github.com/Saddidly/rulesort/actions/workflows/ci.yml)
+publishes live results per revision. This working-tree revision's hosted outcome
+has not been verified here; use the workflow page to check a specific pushed
+revision.

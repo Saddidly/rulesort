@@ -10,6 +10,7 @@ from .config import load_config
 from .models import RuleSortError
 from .planning import build_plan, load_plan, save_plan, summary
 from .transaction import apply_plan, undo_journal
+from .recovery import inspect_journal, recover_journal
 
 
 def _emit(payload: dict[str, Any], as_json: bool) -> None:
@@ -28,6 +29,15 @@ def _emit(payload: dict[str, Any], as_json: bool) -> None:
         print(f"Journal: {payload['journal']}")
     if "message" in payload:
         print(payload["message"])
+    if "state" in payload:
+        print(f"State: {payload['state']}")
+        if "recoverable" in payload:
+            print(f"Recoverable: {'yes' if payload['recoverable'] else 'no'}")
+        for action in payload.get("actions", []):
+            locations = ", ".join(action.get("locations", [])) or "missing/unknown"
+            print(f"  {action['source']} -> {action['destination']} [{locations}]")
+        for issue in payload.get("issues", []):
+            print(f"  ISSUE: {issue}")
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -44,6 +54,12 @@ def _parser() -> argparse.ArgumentParser:
     undo = sub.add_parser("undo", help="undo a completed transaction journal")
     undo.add_argument("journal", type=Path)
     undo.add_argument("--json", action="store_true", help="print a JSON report")
+    inspect = sub.add_parser("inspect", help="inspect transaction state and recovery evidence without moving files")
+    inspect.add_argument("journal", type=Path)
+    inspect.add_argument("--json", action="store_true", help="print a JSON report")
+    recover = sub.add_parser("recover", help="safely recover an interrupted apply or undo")
+    recover.add_argument("journal", type=Path)
+    recover.add_argument("--json", action="store_true", help="print a JSON report")
     return parser
 
 
@@ -66,6 +82,17 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "undo":
             undo_journal(args.journal)
             _emit({"message": f"Undo completed from {args.journal.resolve()}."}, args.json)
+            return 0
+        if args.command == "inspect":
+            report = inspect_journal(args.journal)
+            _emit(report, args.json)
+            return 2 if report["issues"] else 0
+        if args.command == "recover":
+            report = recover_journal(args.journal)
+            report["message"] = (
+                f"Recovery completed or was already complete; journal state is {report['state']}."
+            )
+            _emit(report, args.json)
             return 0
     except (RuleSortError, OSError) as exc:
         print(f"rulesort: error: {exc}", file=sys.stderr)
