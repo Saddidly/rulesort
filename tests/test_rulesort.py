@@ -153,8 +153,9 @@ class RuleSortTests(unittest.TestCase):
                 self.assertFalse((root / action['destination']).exists())
             self.assertEqual(inspect_journal(journal)['state'], 'recovered_undo')
 
-    def _crash_process(self, plan_path: Path, journal: Path | None, match: str, after_unlink: bool) -> subprocess.CompletedProcess:
-        source = plan_path.parent / 'photo.jpg'
+    def _crash_process(self, plan_path: Path, journal: Path | None, match: str, after_unlink: bool,
+                       source_alias: Path | None = None) -> subprocess.CompletedProcess:
+        source = source_alias or plan_path.parent / 'photo.jpg'
         mode = match
         destination = ''
         if match.startswith('destination='):
@@ -167,25 +168,32 @@ sys.path.insert(0, {str(Path(__file__).parents[1] / 'src')!r})
 from rulesort.planning import load_plan
 from rulesort.transaction import apply_plan, undo_journal
 plan_path = Path({str(plan_path)!r})
-source = os.path.normcase(os.path.abspath({str(source)!r}))
+def normalized(path):
+    return os.path.normcase(str(Path(os.fsdecode(path)).resolve()))
+source = normalized({str(source)!r})
 journal = Path({str(journal)!r}) if {journal is not None!r} else None
 mode = {mode!r}
-destination = os.path.normcase(os.path.abspath({destination!r}))
+destination = normalized({destination!r})
 after = {after_unlink!r}
 real_path_unlink = Path.unlink
+observed = []
+matched = [False]
 def matches(path):
     candidate = Path(os.fsdecode(path))
+    candidate_path = normalized(candidate)
     if mode == 'source':
-        return os.path.normcase(os.path.abspath(candidate)) == source
+        return candidate_path == source
     if mode == 'apply_commit':
         return candidate.parent.name == 'staged' and candidate.parent.parent.parent.name == '.rulesort-transactions'
     if mode == 'undo_restore':
         return candidate.parent.name.startswith('undo-staged-')
     if mode == 'destination':
-        return os.path.normcase(os.path.abspath(candidate)) == destination
+        return candidate_path == destination
     return False
 def interrupted_unlink(path, *args, **kwargs):
+    observed.append(normalized(path))
     if matches(path):
+        matched[0] = True
         if after:
             real_path_unlink(path, *args, **kwargs)
         os._exit(83 if after else 82)
@@ -195,10 +203,33 @@ if journal is None:
     apply_plan(load_plan(plan_path))
 else:
     undo_journal(journal)
+if not matched[0]:
+    print(f'crash injection did not match; expected source={{source!r}}, destination={{destination!r}}, mode={{mode!r}}; observed unlink paths={{observed!r}}', file=sys.stderr)
+    sys.exit(90)
 '''
         env = os.environ.copy()
         env['PYTHONPATH'] = str(Path(__file__).parents[1] / 'src')
         return subprocess.run([sys.executable, '-c', script], env=env, capture_output=True, text=True, timeout=30)
+
+    def _short_windows_alias(self, path: Path) -> Path | None:
+        if os.name != 'nt':
+            return None
+        import ctypes
+
+        get_short_path = ctypes.WinDLL('kernel32', use_last_error=True).GetShortPathNameW
+        get_short_path.argtypes = (ctypes.c_wchar_p, ctypes.POINTER(ctypes.c_wchar), ctypes.c_uint)
+        get_short_path.restype = ctypes.c_uint
+        required = get_short_path(str(path), None, 0)
+        if not required:
+            return None
+        buffer = ctypes.create_unicode_buffer(required)
+        written = get_short_path(str(path), buffer, len(buffer))
+        if not written or written >= len(buffer):
+            return None
+        alias = Path(buffer.value)
+        if os.path.normcase(str(alias)) == os.path.normcase(str(path)):
+            return None
+        return alias
 
     def _crash_recovery(self, journal: Path, target: Path, after_unlink: bool) -> subprocess.CompletedProcess:
         script = f'''\
@@ -207,17 +238,27 @@ import sys
 from pathlib import Path
 sys.path.insert(0, {str(Path(__file__).parents[1] / 'src')!r})
 from rulesort.recovery import recover_journal
-target = os.path.normcase(os.path.abspath({str(target)!r}))
+def normalized(path):
+    return os.path.normcase(str(Path(os.fsdecode(path)).resolve()))
+target = normalized({str(target)!r})
 real_path_unlink = Path.unlink
 after = {after_unlink!r}
+observed = []
+matched = [False]
 def interrupted_unlink(path, *args, **kwargs):
-    if os.path.normcase(os.path.abspath(os.fsdecode(path))) == target:
+    candidate = normalized(path)
+    observed.append(candidate)
+    if candidate == target:
+        matched[0] = True
         if after:
             real_path_unlink(path, *args, **kwargs)
         os._exit(83 if after else 82)
     return real_path_unlink(path, *args, **kwargs)
 Path.unlink = interrupted_unlink
 recover_journal(Path({str(journal)!r}))
+if not matched[0]:
+    print(f'crash injection did not match; expected target={{target!r}}; observed unlink paths={{observed!r}}', file=sys.stderr)
+    sys.exit(90)
 '''
         env = os.environ.copy()
         env['PYTHONPATH'] = str(Path(__file__).parents[1] / 'src')
@@ -253,6 +294,22 @@ recover_journal(Path({str(journal)!r}))
             before = journal.read_bytes()
             self.assertEqual(recover_journal(journal)['state'], 'recovered_apply')
             self.assertEqual(journal.read_bytes(), before)
+
+    def test_process_crash_hook_normalizes_windows_short_path_alias(self):
+        with tempfile.TemporaryDirectory(prefix='RuleSort path normalization long ') as temporary:
+            root = Path(temporary)
+            source = root / 'photo.jpg'
+            source.write_bytes(b'original')
+            alias = self._short_windows_alias(source)
+            if alias is None:
+                self.skipTest('Windows filesystem does not expose an 8.3 path alias here')
+            self.assertEqual(alias.resolve(), source.resolve())
+            plan_path = self._write_plan(root)
+            result = self._crash_process(plan_path, None, 'source', after_unlink=False, source_alias=alias)
+            self.assertEqual(result.returncode, 82, result.stderr)
+            journal = self._journal_for(root)
+            self.assertEqual(recover_journal(journal)['state'], 'recovered_apply')
+            self.assertEqual(source.read_bytes(), b'original')
 
     def test_process_crash_after_apply_commit_unlink_is_recoverable(self):
         with tempfile.TemporaryDirectory() as temporary:

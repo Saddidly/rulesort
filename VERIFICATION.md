@@ -4,7 +4,7 @@ Local evidence recorded on 2026-10-03 for the 1.1.0 working tree.
 
 ## Passed locally
 
-The 32 unittest cases passed using Windows Python 3.12.14 from the bundled
+The 33 unittest cases passed using Windows Python 3.12.14 from the bundled
 workspace runtime. The suite uses temporary real files and subprocesses, and
 covers plan/apply/undo, failure injection around link/unlink boundaries,
 interrupted and repeated recovery, two- and three-file cycles, changed content, unrelated
@@ -19,13 +19,15 @@ $env:PYTHONPATH = "src"
 & "C:\Users\jinxa\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe" -m unittest discover -s tests -v
 ```
 
-The suite completed with `Ran 32 tests` and `OK`; `compileall` also completed
+The suite completed with `Ran 33 tests` and `OK`; `compileall` also completed
 without diagnostics.
 
 The subprocess crash harness patches `Path.unlink` and delegates to the saved
 method before exiting at the selected filesystem boundary. This targets the
 same real unlink operation across pathlib versions; patching `os.unlink` was
 not reliable on Python 3.10 because pathlib may retain its accessor at import.
+Its Windows-specific regression also supplies an 8.3 short-path alias for the
+source and verifies that the child hook still interrupts at the intended unlink.
 The Python 3.10 hosted failure was in this test harness. The fix has passed the
 local Python 3.12 suite; a hosted rerun of the corrected harness is pending.
 
