@@ -22,6 +22,13 @@ $env:PYTHONPATH = "src"
 The suite completed with `Ran 32 tests` and `OK`; `compileall` also completed
 without diagnostics.
 
+The subprocess crash harness patches `Path.unlink` and delegates to the saved
+method before exiting at the selected filesystem boundary. This targets the
+same real unlink operation across pathlib versions; patching `os.unlink` was
+not reliable on Python 3.10 because pathlib may retain its accessor at import.
+The Python 3.10 hosted failure was in this test harness. The fix has passed the
+local Python 3.12 suite; a hosted rerun of the corrected harness is pending.
+
 The parent review also reported a separate installed-wheel CLI acceptance pass:
 two-file plan/apply/inspect/undo preserved the expected bytes, and an occupied
 target was refused without changing any file.

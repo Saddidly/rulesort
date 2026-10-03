@@ -172,7 +172,7 @@ journal = Path({str(journal)!r}) if {journal is not None!r} else None
 mode = {mode!r}
 destination = os.path.normcase(os.path.abspath({destination!r}))
 after = {after_unlink!r}
-real_unlink = os.unlink
+real_path_unlink = Path.unlink
 def matches(path):
     candidate = Path(os.fsdecode(path))
     if mode == 'source':
@@ -187,10 +187,10 @@ def matches(path):
 def interrupted_unlink(path, *args, **kwargs):
     if matches(path):
         if after:
-            real_unlink(path, *args, **kwargs)
+            real_path_unlink(path, *args, **kwargs)
         os._exit(83 if after else 82)
-    return real_unlink(path, *args, **kwargs)
-os.unlink = interrupted_unlink
+    return real_path_unlink(path, *args, **kwargs)
+Path.unlink = interrupted_unlink
 if journal is None:
     apply_plan(load_plan(plan_path))
 else:
@@ -208,15 +208,15 @@ from pathlib import Path
 sys.path.insert(0, {str(Path(__file__).parents[1] / 'src')!r})
 from rulesort.recovery import recover_journal
 target = os.path.normcase(os.path.abspath({str(target)!r}))
-real_unlink = os.unlink
+real_path_unlink = Path.unlink
 after = {after_unlink!r}
 def interrupted_unlink(path, *args, **kwargs):
     if os.path.normcase(os.path.abspath(os.fsdecode(path))) == target:
         if after:
-            real_unlink(path, *args, **kwargs)
+            real_path_unlink(path, *args, **kwargs)
         os._exit(83 if after else 82)
-    return real_unlink(path, *args, **kwargs)
-os.unlink = interrupted_unlink
+    return real_path_unlink(path, *args, **kwargs)
+Path.unlink = interrupted_unlink
 recover_journal(Path({str(journal)!r}))
 '''
         env = os.environ.copy()
